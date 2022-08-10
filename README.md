@@ -1,0 +1,2 @@
+# Commands
+- Run 'npm install'
