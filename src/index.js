@@ -1,5 +1,5 @@
-import { fromEvent, Subject } from 'rxjs';
-import { map, filter, takeUntil } from "rxjs/operators";
+import { fromEvent, Subject, merge } from 'rxjs';
+import { map, filter, takeUntil } from 'rxjs/operators';
 import WORD_LIST from './wordList.json';
 
 const lettersRows = document.querySelectorAll('.letter-row');
@@ -8,13 +8,12 @@ const restartButton = document.querySelector('#restart-button');
 
 const onKeyDown$ = fromEvent(document, 'keydown');
 
-let letterIndex = 0;
-let letterRowIndex = 0;
-let userAnswer = [];
+let letterIndex;
+let letterRowIndex;
+let userAnswer;
 
 const getRandomWord = () => WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
-let rightWord = getRandomWord();
-console.log(rightWord);
+let rightWord;
 
 const userWinOrLose$ = new Subject();
 
@@ -25,6 +24,7 @@ const insertLetter$ = onKeyDown$.pipe(
 );
 const insertLetterObserver = {
   next: (value) => {
+    messageText.textContent = '';
     let letterBox = Array.from(lettersRows)[letterRowIndex].children[letterIndex];
     letterBox.textContent = value;
     letterBox.classList.add('filled-letter');
@@ -36,13 +36,20 @@ const insertLetterObserver = {
 // Check the word
 const checkWord$ = onKeyDown$.pipe(
   map(event => event.key),
-  filter(letter => letter === 'Enter' && letterIndex === 5 && letterRowIndex <= 5),
+  filter(letter => letter === 'Enter' && letterRowIndex <= 5),
 )
 const checkWordObserver = {
   next: () => {
     if (userAnswer.length !== 5) {
-      messageText.textContent = 'Please fill all the letters!';
+      messageText.textContent = userAnswer.length === 4
+        ? 'You are missing a letter'
+        : `You are missing ${5 - userAnswer.length} letters`;
       return;
+    }
+
+    if (!WORD_LIST.includes(userAnswer.join(''))) {
+      messageText.textContent = 'Wrong word';
+      // return;
     }
 
     for (let i = 0; i < 5; i++) {
@@ -62,12 +69,6 @@ const checkWordObserver = {
 
       letterBox.classList.add(letterColor);
     }
-
-    // if (userAnswer.length === 5) {
-    //   letterIndex = 0;
-    //   userAnswer = [];
-    //   letterRowIndex++;
-    // }
 
     if (userAnswer.join('') === rightWord) {
       messageText.textContent = 'You win! 😎😎😎';
@@ -90,10 +91,10 @@ const checkWordObserver = {
 // Remove a letter
 const removeLetter$ = onKeyDown$.pipe(
   map((event) => event.key),
-  filter((key) => key === "Backspace" && letterIndex !== 0)
+  filter((key) => key === 'Backspace' && letterIndex !== 0)
 );
 const removeLetterObserver = {
-  next: (value) => {
+  next: () => {
     let letterBox = Array.from(lettersRows)[letterRowIndex].children[letterIndex - 1];
     letterBox.textContent = '';
     letterBox.classList.remove('filled-letter');
@@ -102,15 +103,35 @@ const removeLetterObserver = {
   }
 };
 
-// When user win or lose
-userWinOrLose$.subscribe(() => {
-  let letterRowsWinned = Array.from(lettersRows)[letterRowIndex];
-  for (let i = 0; i < 5; i++) {
-    letterRowsWinned.children[i].classList.add('letter-green');
-  }
-})
+const onRestartClick$ = fromEvent(restartButton, 'click');
+const onWindowLoad$ = fromEvent(window, 'load');
+const restartGame$ = merge(onWindowLoad$, onRestartClick$);
 
-// Subcribe to the observables
-insertLetter$.pipe(takeUntil(userWinOrLose$)).subscribe(insertLetterObserver);
-checkWord$.pipe(takeUntil(userWinOrLose$)).subscribe(checkWordObserver);
-removeLetter$.pipe(takeUntil(userWinOrLose$)).subscribe(removeLetterObserver);
+restartGame$.subscribe(() => {
+  Array.from(lettersRows).map((row) =>
+    Array.from(row.children).map((letterBox) => {
+      letterBox.textContent = '';
+      letterBox.classList = 'letter';
+    })
+  );
+
+  letterRowIndex = 0;
+  letterIndex = 0;
+  userAnswer = [];
+  messageText.textContent = '';
+  rightWord = getRandomWord();
+
+  restartButton.disabled = true;
+
+  console.log(`Right word: ${rightWord}`);
+
+  let insertLetterSubscription = insertLetter$
+    .pipe(takeUntil(userWinOrLose$))
+    .subscribe(insertLetterObserver);
+  let checkWordSubscription = checkWord$
+    .pipe(takeUntil(userWinOrLose$))
+    .subscribe(checkWordObserver);
+  let removeLetterSubscription = removeLetter$
+    .pipe(takeUntil(userWinOrLose$))
+    .subscribe(removeLetterObserver);
+});
